@@ -92,9 +92,6 @@ def kl_ucb(cumul_rewards, n_pulls, a):
 
     return np.argmax(u.reshape(n_pulls.shape), axis= 0)
 
-def halley_iter(x, target_val):
-    pass
-
 def myopic(cumul_rewards, n_pulls):
     centered = 2*cumul_rewards - n_pulls 
     return np.argmax(centered, axis= 0)
