@@ -195,7 +195,6 @@ class LALasso():
         return self
 
 class GraphLinUCB():
-    # TODO: update gamma with Sherman Morrison: simple for current user, delicated for other users
     # TODO store estimated Theta (with Laplacian) and use its rows for beta
 
     def __init__(self, a= 1.0, delta= 0.01):
@@ -203,9 +202,10 @@ class GraphLinUCB():
         self.a= a
 
     def play_arm(self, cxt_mat, u, t):
-        invLambda_u = np.linalg.inv(self.Lambda[u])
+        # invLambda_u = np.linalg.inv(self.Lambda[u])
         # print(np.linalg.norm(self.invLambda[u] - invLambda_u))
-        radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, invLambda_u, cxt_mat))
+        # radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, invLambda_u, cxt_mat))
+        radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, self.invLambda[u], cxt_mat))
         #radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, self.invA[u], cxt_mat))
         theta_estim_vec = self.invA_aug @ self.b_aug
         # theta_estim_vec, _, rank, _ = np.linalg.lstsq(self.A_aug, self.b_aug, rcond= None)
@@ -228,7 +228,7 @@ class GraphLinUCB():
         self.aL_diag_stack = np.einsum("k, ij -> kij", np.diag(self.aL), np.eye(bandit.dim))
         self.Lambda = self.A + 2*self.aL_diag_stack + np.einsum("lk, kij -> lij", self.aL**2, self.invA)
         self.Lambda -= (np.diag(self.aL)**2)[:,None,None] * self.invA
-        # self.invLambda = np.linalg.inv(self.Lambda)
+        self.invLambda = np.linalg.inv(self.Lambda)
 
         # Augmented invertible matrix of Equation (4) that estimates Theta
         self.invA_aug =   np.kron(np.linalg.inv(self.aL), np.eye(self.dim))
@@ -247,23 +247,24 @@ class GraphLinUCB():
 
         # update Lambda: recomputed at each time step. A and invA are incrementally updated
         # self.b[u] += y*x
-        self.A[u] += np.outer(x,x)
-        self.invA[u] -= rank1_update(self.invA[u], x)
-        self.Lambda = self.A + 2*self.aL_diag_stack + np.einsum("lk, kij -> lij", self.aL**2, self.invA)
-        self.Lambda -= (np.diag(self.aL)**2)[:,None,None] * self.invA
-
+        
         # updating inv Lambda for current user via Sherman-Morrison
-        # self.invLambda[u] -= rank1_update(self.invLambda[u], x)
+        self.invLambda[u] -= rank1_update(self.invLambda[u], x)
 
         # Updating inv Lambda for the rest of users: more delicate
-        # users_but_u = np.array([v for v in range(self.n_users) if v != u], dtype= "int16")
+        users_but_u = np.array([v for v in range(self.n_users) if v != u], dtype= "int16")
         # prepare the vector of rank 1 update per user
-        # vec = rank1_update_decomposed(self.invA[u], x) # -outer(vec,vec) is the update due to the inverse parts
-        # aL_vec = np.outer(self.aL[u, users_but_u], vec) # the vector of update per user different from u
+        vec = rank1_update_decomposed(self.invA[u], x) # -outer(vec,vec) is the update due to the inverse parts
+        aL_vec = np.outer(self.aL[u, users_but_u], vec) # the vector of update per user different from u
         # apply Sherman-Morrison
-        # invLambda_aL_vec = np.einsum("kij, kj -> ki", self.invLambda[users_but_u], aL_vec)
-        # self.invLambda[users_but_u] += np.einsum("ki, kj -> kij", invLambda_aL_vec, invLambda_aL_vec)\
-        #                             /(1 - np.einsum("ki, ki -> k", aL_vec, invLambda_aL_vec))[:,None,None]
+        invLambda_aL_vec = np.einsum("kij, kj -> ki", self.invLambda[users_but_u], aL_vec)
+        self.invLambda[users_but_u] += np.einsum("ki, kj -> kij", invLambda_aL_vec, invLambda_aL_vec)\
+                                    /(1 - np.einsum("ki, ki -> k", aL_vec, invLambda_aL_vec))[:,None,None]
+
+        self.A[u] += np.outer(x,x)
+        self.invA[u] -= rank1_update(self.invA[u], x)
+        # self.Lambda = self.A + 2*self.aL_diag_stack + np.einsum("lk, kij -> lij", self.aL**2, self.invA)
+        # self.Lambda -= (np.diag(self.aL)**2)[:,None,None] * self.invA
 
         # update beta
         detV_u = np.linalg.det(self.A[u] + self.aL[u,u]*np.eye(self.dim))
@@ -273,9 +274,36 @@ class GraphLinUCB():
         theta_per_user = np.einsum("ki, kij -> kj" , self.b_aug.reshape(self.n_users, self.dim), self.invA)
         beta_term_2 =  np.linalg.norm(self.aL[u] @ theta_per_user)/sqrt(self.a)
         self.beta[u] = beta_term_1 + beta_term_2
-        # XXX the following formula overestimates the second term and does not correpsond to the authors code
-        # XXX it results in LINEAR REGRET
+        # XXX using a norm bound on the dot product aL * theta_user results in linear regret
         return self
+
+class GTFLasso():
+    # TODO complete coding
+    def __init__(self, a= 1.0, delta= 0.01):
+        self.delta = delta
+        self.a= a
+
+    def play_arm(self, cxt_mat, u, t):
+        
+        radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, self.invLambda[u], cxt_mat))
+        theta_estim_vec = self.invA_aug @ self.b_aug
+        # theta_estim_vec, _, rank, _ = np.linalg.lstsq(self.A_aug, self.b_aug, rcond= None)
+        theta_estim_u = theta_estim_vec[u*self.dim:(u+1)*self.dim]
+        return np.argmax(cxt_mat @ theta_estim_u + radius)
+
+    def initialize(self, bandit):
+        self.dim = bandit.dim
+        self.n_users = bandit.n_users
+        self.sigma = bandit.sigma
+        self.incidence= bandit.incidence  # Graph incidence matrix
+        return self
+    
+    def update(self, x, y, u, t):
+        # TODO.: update V, b matrices, and estimated Theta
+        self.V_aug[u*self.dim:(u+1)*self.dim, u*self.dim:(u+1)*self.dim] += np.outer(x,x)
+        self.b[u*self.dim:(u+1)*self.dim] += y*x
+        
+        pass
 
     
 def solve_lasso(V, b, l, theta, lr, t):
