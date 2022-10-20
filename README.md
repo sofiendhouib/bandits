@@ -19,3 +19,8 @@ We implement repetitions in two ways:
 * Classic way: a for loop to iterate over the different iterations.
 * Vectorized way: At each time step, several agents/players play in parallel, after separately having observed iid random variables for the rewards.
 This considerably reduces the time needed for repetitions.
+
+## General description of the code:
+* `experiments.py`: contains functions that perfom an experiment. As arguments, they take a bandit instance and a policy/player/agent, along with a horizon and a number of repetitions.
+* `bandit.py`: classes for several bandit instances. For the moment, instance of stochastic, contextual and multi-task contextual bandits
+* `policy.py`: classes for different policies. 
