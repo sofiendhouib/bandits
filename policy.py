@@ -5,6 +5,13 @@ from scipy.special import rel_entr, entr, expit
 from numpy.random import default_rng
 random =default_rng()
 from sklearn.linear_model import Lasso as LassoSklearn
+from abc import ABC, abstractmethod
+
+class epsilon_greedy():
+    """ class for a player that playes makes the greedy choice with a certain probability at each round.
+    """
+    def __init__(self, explore_proba= 'cubic'):
+        self.explore_proba = explore_proba
 
 
 def epsilon_greedy(cumul_rewards, n_pulls, t, explore_proba= 'cubic'):
@@ -26,6 +33,23 @@ def epsilon_greedy_2(cumul_rewards, n_pulls, t, n_repetitions, explore_proba):
     incorrect_explore_inds = arm[explore] == arm_explore
     arm[explore][incorrect_explore_inds] += 1
     return arm
+
+class IndexPolicy():
+    """
+    Parent class representing index policies
+    """
+    def play_arm(self, *args, **kwargs):
+        return np.argmax(self.make_index(*args, **kwargs))
+
+    def make_index(cumul_rewards, n_pulls):
+        pass
+
+class AdditiveConfidenceRadiusPolicy(IndexPolicy):
+    """ Parent class representing ucb policies for which the 
+    index is the sum of the empirical mean plus some radius
+    """
+    pass
+
 
 def ucb1(cumul_rewards, n_pulls, t, a, sigma= 1.0):
     if callable(a): a = a(t)
