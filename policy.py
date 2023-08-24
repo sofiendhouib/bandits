@@ -7,6 +7,12 @@ random =default_rng()
 from sklearn.linear_model import Lasso as LassoSklearn
 from abc import ABC, abstractmethod
 
+class StochasticBanditPolicy(ABC):
+
+    @abstractmethod
+    def play_arm(self, *args, **kwargs):
+        pass
+
 class epsilon_greedy():
     """ class for a player that playes makes the greedy choice with a certain probability at each round.
     """
@@ -34,87 +40,125 @@ def epsilon_greedy_2(cumul_rewards, n_pulls, t, n_repetitions, explore_proba):
     arm[explore][incorrect_explore_inds] += 1
     return arm
 
-class IndexPolicy():
+class IndexPolicy(StochasticBanditPolicy):
     """
-    Parent class representing index policies
+        Parent class representing index policies
     """
-    def play_arm(self, *args, **kwargs):
-        return np.argmax(self.make_index(*args, **kwargs))
-
-    def make_index(cumul_rewards, n_pulls):
+    def play_arm(self, cumul_rewards, n_pulls, t):
+        return np.argmax(self.compute_index(cumul_rewards, n_pulls, t), axis= 0)
+    
+    def compute_index(self, cumul_rewards, n_pulls, t):
         pass
+
+    def non_greedy_play(self):
+        pass
+
+class Greedy(IndexPolicy):
+    
+    def compute_index(self, cumul_rewards, n_pulls, t):
+        return cumul_rewards/n_pulls
 
 class AdditiveConfidenceRadiusPolicy(IndexPolicy):
     """ Parent class representing ucb policies for which the 
     index is the sum of the empirical mean plus some radius
     """
-    pass
+    def __init__(self, a = 0.01, sigma= 1.0):
+        self.sigma = sigma
+        self.a = a
+    
+    def get_bandit_info(self, bandit):
+        pass
+
+    def compute_confidence_radius(self, n_pulls, t, *args, **kwargs):
+        pass
+
+    def compute_index(self, cumul_rewards, n_pulls, t):
+        radius = self.compute_confidence_radius(n_pulls, t)
+        return cumul_rewards/n_pulls + radius
 
 
-def ucb1(cumul_rewards, n_pulls, t, a, sigma= 1.0):
-    if callable(a): a = a(t)
-    u = cumul_rewards/n_pulls + sigma*np.sqrt(2*log(a)/n_pulls)
-    return np.argmax(u, axis= 0)
+class UCB1(AdditiveConfidenceRadiusPolicy):
 
-def moss(cumul_rewards, n_pulls, t, horizon_arms_ratio):
-    rad = 2*np.sqrt(np.log(np.maximum(horizon_arms_ratio/n_pulls,1))/n_pulls)
-    u = cumul_rewards/n_pulls + rad
-    return np.argmax(u, axis= 0)
-
-def __rev_rel_entr(x, p):
-    return rel_entr(p,x) + rel_entr(1-p,1-x), (x-p)/(x*(1-x)), p/x**2 + (1-p)/(1-x)**2
+    def compute_confidence_radius(self, n_pulls, t):
+        if callable(self.a): a = self.a(t):
+            
+        return self.sigma*np.sqrt(2*log(a)/n_pulls)
 
 
-def kl_ucb(cumul_rewards, n_pulls, t):
-    """
-    We implement the kl-ucb policy that uses the kl-divergence to build confidence bounds.
-    For the moment, it can only be used with Bernoulli rewards.
-    We distinguish the case of having empirical means in (0,1), and the case of extreme values 0 and 1
-    that we treat separately. For (0,1), we compute the upper confidence bound using the Halley method 
-    (second order analogue of Newton iterations).
+class MOSS(AdditiveConfidenceRadiusPolicy):
+    
+    def get_additional_info(self, bandit, experiment):
+        self.n_arms = len(bandit.arm_means)
+        self.horizon = experiment.horizon
+    def compute_confidence_radius(self, cumul_rewards, n_pulls, t):
+        return 2*np.sqrt(np.log(np.maximum(self.horizon_arms_ratio/n_pulls,1))/n_pulls)
 
-    Parameters
-    ----------
-    cumul_rewards : _type_
-        _description_
-    n_pulls : _type_
-        _description_
-    a : _type_
-        _description_
 
-    Returns
-    -------
-    _type_
-        _description_
-    """
-    rad = 2*log(1+t*log(t)**2)/n_pulls.flatten()
-    emp_means = (cumul_rewards/n_pulls).flatten()
-    u= np.empty_like(emp_means)
-    # to avoid problems at boundaries, we consider them separately
-    u[emp_means >= 1] = 1
-    u[emp_means <= 0] = 1-np.exp(-rad[emp_means<=0])
-    inds = np.logical_and(emp_means < 1, emp_means > 0)
-    rad_inds = rad[inds]
-    means_inds = emp_means[inds]
-    # initialization by a value for which KL is greater than the target value
-    # I used the fact that maximum of two nonnegative quantities is smaller than their sum here
-    ent_means = entr(means_inds)+entr(1-means_inds)
-    mu = np.maximum(np.exp(-(rad_inds+ent_means)/means_inds), 
-                    1-np.exp(-(rad_inds+ent_means)/(1-means_inds)))
+class ThompsonBernoulli():
 
-    #x0 = np.ones_like(means_inds)-1e-8
-    if np.any(inds):
-        for i in range(3): # achieves error 1e-6 while newton 1e-3 with same number of iterations
-            val, deriv, hess= __rev_rel_entr(mu, means_inds)
-            mu -= 2*(val-rad_inds)*deriv/(2*deriv**2 - (val-rad_inds)*hess)
-        # for i in range(3):
-        #    val, deriv, _= __rev_rel_entr(mu, means_inds)
-        #    mu -= (val-rad_inds)/deriv
-        #    mu -= (np.log(val) - np.log(rad_inds))*val/deriv
-        # print(np.max(np.abs(val-rad_inds)))
-        u[inds] = mu.copy()
+    def compute_index(self, cumul_rewards, n_pulls, t, a, b):
+        # update prior to create posterior
+        a += cumul_rewards
+        b += n_pulls-cumul_rewards
+        # sample index from posterior
+        return random.beta(a, b, n_pulls.shape).astype("float32")
 
-    return np.argmax(u.reshape(n_pulls.shape), axis= 0)
+
+class KL_UCB(IndexPolicy):
+
+    @classmethod
+    def __rev_rel_entr(cls, x, p):
+        return rel_entr(p,x) + rel_entr(1-p,1-x), (x-p)/(x*(1-x)), p/x**2 + (1-p)/(1-x)**2
+
+    def compute_index(self, cumul_rewards, n_pulls, t):
+        """
+        We implement the kl-ucb policy that uses the kl-divergence to build confidence bounds.
+        For the moment, it can only be used with Bernoulli rewards.
+        We distinguish the case of having empirical means in (0,1), and the case of extreme values 0 and 1
+        that we treat separately. For (0,1), we compute the upper confidence bound using the Halley method 
+        (second order analogue of Newton iterations).
+
+        Parameters
+        ----------
+        cumul_rewards : _type_
+            _description_
+        n_pulls : _type_
+            _description_
+        a : _type_
+            _description_
+
+        Returns
+        -------
+        index of the KL-UCB policy
+        """
+        rad = 2*log(1+t*log(t)**2)/n_pulls.flatten()
+        emp_means = (cumul_rewards/n_pulls).flatten()
+        u= np.empty_like(emp_means)
+        # to avoid problems at boundaries, we consider them separately
+        u[emp_means >= 1] = 1
+        u[emp_means <= 0] = 1-np.exp(-rad[emp_means<=0])
+        inds = np.logical_and(emp_means < 1, emp_means > 0)
+        rad_inds = rad[inds]
+        means_inds = emp_means[inds]
+        # initialization by a value for which KL is greater than the target value
+        # I used the fact that maximum of two nonnegative quantities is smaller than their sum here
+        ent_means = entr(means_inds)+entr(1-means_inds)
+        mu = np.maximum(np.exp(-(rad_inds+ent_means)/means_inds), 
+                        1-np.exp(-(rad_inds+ent_means)/(1-means_inds)))
+
+        #x0 = np.ones_like(means_inds)-1e-8
+        if np.any(inds):
+            for i in range(3): # achieves error 1e-6 while newton 1e-3 with same number of iterations
+                val, deriv, hess= KL_UCB.__rev_rel_entr(mu, means_inds)
+                mu -= 2*(val-rad_inds)*deriv/(2*deriv**2 - (val-rad_inds)*hess)
+            # for i in range(3):
+            #    val, deriv, _= __rev_rel_entr(mu, means_inds)
+            #    mu -= (val-rad_inds)/deriv
+            #    mu -= (np.log(val) - np.log(rad_inds))*val/deriv
+            # print(np.max(np.abs(val-rad_inds)))
+            u[inds] = mu.copy()
+
+        return u.reshape(n_pulls.shape)
 
 def myopic(cumul_rewards, n_pulls, t):
     arms = np.empty(n_pulls.shape[1], dtype= 'uint8')
@@ -129,14 +173,6 @@ def myopic_softmax(cumul_rewards, n_pulls, t, temp):
     probas = expit(-ksi/temp)
     return random.binomial(1, probas, size= len(ksi))
 
-
-def Thompson_Bernoulli(cumul_rewards, n_pulls, t, a, b):
-    # update prior to create posterior
-    a += cumul_rewards
-    b += n_pulls-cumul_rewards
-    # sample from posterior
-    from_posterior = random.beta(a, b, n_pulls.shape).astype("float32")
-    return np.argmax(from_posterior, axis= 0)
 
 def Thompson_Bernoulli_symmetric(cumul_rewards, n_pulls, t, a, b):
     # update prior to create posterior
@@ -167,7 +203,8 @@ class LinUCB(PolicyContextual):
         ucb = cxt_mat @ self.theta_estim + radius
         return np.argmax(ucb, axis= 0)
 
-    def initialize(self, bandit, repetitions):
+
+    def initialize_from_bandit(self, bandit, repetitions):
         self.log_det_diff = np.zeros(repetitions)
         self.invV =  np.einsum("ij,k->ijk", 1/self.l_reg*np.eye(bandit.dim), np.ones(repetitions))
         self.b = np.zeros((bandit.dim,repetitions))

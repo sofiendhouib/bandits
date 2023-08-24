@@ -23,10 +23,10 @@ class StochasticBanditExperiment():
         self.arm_history = None
         self.reward_history = None
     
-    def run_sequential(self, bandit, policy_with_args, show_progress= False):
+    def run_sequential(self, bandit, policy, show_progress= False):
         pass
     
-    def run_parallel(self, bandit, policy_with_args, show_progress= False):
+    def run_parallel(self, bandit, policy, show_progress= False):
         """Runs a stochastic bandit experiment and stores the history of arm selection and
         received rewards for all repetitions. The repetitions are ran in parallel in a vectorize way
 
@@ -34,7 +34,7 @@ class StochasticBanditExperiment():
         ----------
         bandit : bandit instance
             instance of the class StochasticBandit
-        policy_with_args : policy
+        policy : object of class StochasticBanditPolicy
             a policy that only takes the number of pulls and the cumulated reward as an input. All other hyperparameters are fixed a priori
         show_progress : bool, optional
             Whether to show a progress bar. Set to False by default.
@@ -65,7 +65,7 @@ class StochasticBanditExperiment():
         for t in timesteps:
             
             # play arm / pull arm
-            arms.append(policy_with_args(cumul_rewards, n_pulls, t))
+            arms.append(policy.play_arm(cumul_rewards, n_pulls, t))
         
             # collect reward from pulled arm
             rewards.append(bandit.reward_table[t,np.arange(self.repetitions),arms[-1]])
