@@ -123,6 +123,7 @@ class StochasticBanditExperiment():
             regret = np.cumsum(expected_oracle_rewards[:,None] - self.reward_history, axis= 0)
 
         return regret
+
 def compute_regret_old(rewards, actions, bandit, which = "pseudo"):
         assert actions is not None and rewards is not None, "Please run an experiment before plotting the regret !"
         which_lower = which.lower()
