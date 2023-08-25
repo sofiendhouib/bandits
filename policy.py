@@ -225,19 +225,22 @@ def Thompson_Bernoulli_symmetric(cumul_rewards, n_pulls, t, a, b):
     from_posterior = random.beta(a, b, n_pulls.shape).astype("float32")
     return np.argmax(from_posterior, axis= 0)
 
-class PolicyContextual():
+class ContextualBanditPolicy(ABC):
 
-    def __init__(self, l_reg= 1, delta= 0.1, theta_bound= 1.0):
-        self.l_reg = l_reg
-        self.delta = delta
-        self.theta_bound = theta_bound
+    @abstractmethod
+    def play_arm(self, cxt_mat):
+        pass
 
-class LinUCB(PolicyContextual):
+    @abstractmethod
+    def update(self, x, y, t):
+        pass
+
+class LinUCB(ContextualBanditPolicy):
     # TODO make confidence radius a function of the determinant
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def play_arm(self, cxt_mat, t):
+    def play_arm(self, cxt_mat):
         # TODO Add sigma standard deviation parameter
         # dim = cxt_mat.shape[1]
         # sqrtbeta = sqrt(self.l_reg) *self.theta_bound+ sqrt(2*log(1/self.delta)+dim*log(1+t*self.theta_bound/(dim*self.l_reg)))
@@ -265,7 +268,8 @@ class LinUCB(PolicyContextual):
         self.theta_estim = np.einsum("ijk,jk->ik", self.invV, self.b)
         return self
 
-class LALasso():
+class LALasso(ContextualBanditPolicy):
+    # TODO Distinguish the case where dim is high
 
     def __init__(self, theta_estim, l_reg= 1, delta= 0.1):
         self.l_reg = l_reg
@@ -273,10 +277,10 @@ class LALasso():
         self.theta_estim = theta_estim
         
 
-    def play_arm(self, cxt_mat, t):
+    def play_arm(self, cxt_mat):
         return np.argmax(cxt_mat @ self.theta_estim, axis= 0) # greedy policy
 
-    def initialize(self, bandit, repetitions):
+    def initialize_from_bandit(self, bandit, repetitions):
         self.V =  np.zeros((bandit.dim, bandit.dim, repetitions))
         self.b = np.zeros((bandit.dim,repetitions))
         self.theta_estim = np.zeros((bandit.dim, repetitions))
