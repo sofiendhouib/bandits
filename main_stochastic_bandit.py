@@ -12,13 +12,13 @@ from experiment import StochasticBanditExperiment
 
 
 arm_means = [0.1, 0.2]
+
+experiment = StochasticBanditExperiment(horizon= 10000, repetitions= 1000)
 bandit_instance = bandit.StochasticBandit(arm_means, partial(random.binomial, 1))
+# agent = policy.UCB1(a= lambda x: 1+x*log(x)**2)
+agent = policy.AdaUCB(horizon= experiment.horizon)
 
-policy_with_args = partial(policy.ucb1, a= lambda x: 1+x*log(x)**2)
-#policy_with_args = policy.kl_ucb
-
-experiment = StochasticBanditExperiment(horizon= 1000, repetitions= 1000)
-experiment.run_parallel(bandit_instance, policy_with_args, show_progress= True)
+experiment.run_parallel(bandit_instance, agent, show_progress= True)
 
 plt.figure()
 plt.plot(np.arange(experiment.horizon)+1, experiment.compute_regret(bandit_instance))
