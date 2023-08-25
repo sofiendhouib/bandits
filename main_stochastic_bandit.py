@@ -24,6 +24,3 @@ experiment.run_parallel(bandit_instance, agent, show_progress= True)
 plt.figure()
 plt.plot(np.arange(experiment.horizon)+1, experiment.compute_regret(bandit_instance))
 plt.show()
-
-
-# %%
