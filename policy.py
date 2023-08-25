@@ -235,6 +235,9 @@ class ContextualBanditPolicy(ABC):
     def update(self, x, y, t):
         pass
 
+class SupLinUCB(ContextualBanditPolicy):
+    pass
+
 class LinUCB(ContextualBanditPolicy):
     # TODO make confidence radius a function of the determinant
     def __init__(self, *args, **kwargs):
