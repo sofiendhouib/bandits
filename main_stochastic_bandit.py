@@ -11,10 +11,11 @@ from functools import partial
 from experiment import StochasticBanditExperiment
 
 
-arm_means = [0.1, 0.2]
 
-experiment = StochasticBanditExperiment(horizon= 10000, repetitions= 1000)
-bandit_instance = bandit.StochasticBandit(arm_means, partial(random.binomial, 1))
+experiment = StochasticBanditExperiment(horizon= 100000, repetitions= 100)
+
+
+bandit_instance = bandit.StochasticBandit([0.5, 0.6], partial(random.binomial, 1))
 # agent = policy.UCB1(a= lambda x: 1+x*log(x)**2)
 agent = policy.AdaUCB(horizon= experiment.horizon)
 
