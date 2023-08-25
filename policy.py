@@ -10,8 +10,12 @@ from abc import ABC, abstractmethod
 class StochasticBanditPolicy(ABC):
 
     @abstractmethod
-    def play_arm(self, *args, **kwargs):
+    def play_arm(self, cumul_rewards, n_pulls, t):
         pass
+
+    def get_additional_info(self, bandit, experiment):
+        pass
+
 
 class epsilon_greedy():
     """ class for a player that playes makes the greedy choice with a certain probability at each round.
@@ -45,9 +49,10 @@ class IndexPolicy(StochasticBanditPolicy):
         Parent class representing index policies
     """
     def play_arm(self, cumul_rewards, n_pulls, t):
-        return np.argmax(self.compute_index(cumul_rewards, n_pulls, t), axis= 0)
+        return np.argmax(self.index(cumul_rewards, n_pulls, t), axis= 0)
     
-    def compute_index(self, cumul_rewards, n_pulls, t):
+    @abstractmethod
+    def index(self, cumul_rewards, n_pulls, t):
         pass
 
     def non_greedy_play(self):
@@ -55,62 +60,100 @@ class IndexPolicy(StochasticBanditPolicy):
 
 class Greedy(IndexPolicy):
     
-    def compute_index(self, cumul_rewards, n_pulls, t):
+    def index(self, cumul_rewards, n_pulls, t):
         return cumul_rewards/n_pulls
 
-class AdditiveConfidenceRadiusPolicy(IndexPolicy):
-    """ Parent class representing ucb policies for which the 
+class SubGaussianBanditUCB(IndexPolicy):
+    """ Parent class representing ucb policies taylored for 
+    a bandit with SubGaussian rewards, for which the 
     index is the sum of the empirical mean plus some radius
     """
-    def __init__(self, a = 0.01, sigma= 1.0):
+    def __init__(self, a = 100.0, sigma= 1.0, *args, **kwargs):
         self.sigma = sigma
         self.a = a
-    
-    def get_bandit_info(self, bandit):
+        if not callable(a):
+            self.a = lambda u: a
+
+
+    # def confidence_radius(self, n_pulls, t):
+    #     pass
+
+    @abstractmethod
+    def confidence_radius_numerator(self, n_pulls, t):
         pass
 
-    def compute_confidence_radius(self, n_pulls, t, *args, **kwargs):
-        pass
-
-    def compute_index(self, cumul_rewards, n_pulls, t):
-        radius = self.compute_confidence_radius(n_pulls, t)
+    def index(self, cumul_rewards, n_pulls, t):
+        radius = self.sigma*np.sqrt(self.confidence_radius_numerator(n_pulls, t)/n_pulls)
         return cumul_rewards/n_pulls + radius
 
 
-class UCB1(AdditiveConfidenceRadiusPolicy):
+class UCB1(SubGaussianBanditUCB):
 
-    def compute_confidence_radius(self, n_pulls, t):
-        if callable(self.a): a = self.a(t):
-            
-        return self.sigma*np.sqrt(2*log(a)/n_pulls)
+    def confidence_radius_numerator(self, n_pulls, t):       
+        return 2*log(self.a(t))
 
+class MOSS(SubGaussianBanditUCB):
 
-class MOSS(AdditiveConfidenceRadiusPolicy):
+    def __init__(self, horizon_arms_ratio= 10.0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.horizon_arms_ratio = horizon_arms_ratio
     
     def get_additional_info(self, bandit, experiment):
-        self.n_arms = len(bandit.arm_means)
+        self.horizon_arms_ratio = experiment.horizon / len(bandit.arm_means)
+        return self
+    
+    def confidence_radius_numerator(self, n_pulls, t):
+        return 4*np.log(np.maximum(self.horizon_arms_ratio/n_pulls,1))
+
+class OptimallyConfidentUCB(SubGaussianBanditUCB):
+
+    def __init__(self, horizon= 1000, eps= 1.0, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.horizon = horizon
+        self.eps = eps
+    
+    def get_additional_info(self, bandit, experiment):
+        self.horizon_arms_ratio = experiment.horizon / len(bandit.arm_means)
+        return self
+    
+    def confidence_radius_numerator(self, n_pulls, t):
+        return 2*(1+self.eps)*np.log(self.horizon/t)
+
+class AdaUCB(SubGaussianBanditUCB):
+    def __init__(self, horizon= 1000, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.horizon = horizon
+    
+    def get_additional_info(self, bandit, experiment):
         self.horizon = experiment.horizon
-    def compute_confidence_radius(self, cumul_rewards, n_pulls, t):
-        return 2*np.sqrt(np.log(np.maximum(self.horizon_arms_ratio/n_pulls,1))/n_pulls)
+        return self
+    
+    def confidence_radius_numerator(self, n_pulls, t):
+        denom = np.sqrt(np.minimum(n_pulls[None,:], n_pulls[:, None])).sum(axis=0)
+        denom *= np.sqrt(n_pulls)
+        return 2*np.log(self.horizon/(denom*np.sqrt(n_pulls)))
 
-
-class ThompsonBernoulli():
-
-    def compute_index(self, cumul_rewards, n_pulls, t, a, b):
+class ThompsonBernoulli(IndexPolicy):
+    
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+ 
+    def index(self, cumul_rewards, n_pulls, t):
         # update prior to create posterior
-        a += cumul_rewards
-        b += n_pulls-cumul_rewards
+        a_posterior = self.a + cumul_rewards
+        b_posterior = self.b + n_pulls-cumul_rewards
         # sample index from posterior
-        return random.beta(a, b, n_pulls.shape).astype("float32")
+        return random.beta(a_posterior, b_posterior, n_pulls.shape).astype("float32")
 
 
-class KL_UCB(IndexPolicy):
+class KLUCB(IndexPolicy):
 
     @classmethod
     def __rev_rel_entr(cls, x, p):
         return rel_entr(p,x) + rel_entr(1-p,1-x), (x-p)/(x*(1-x)), p/x**2 + (1-p)/(1-x)**2
 
-    def compute_index(self, cumul_rewards, n_pulls, t):
+    def index(self, cumul_rewards, n_pulls, t):
         """
         We implement the kl-ucb policy that uses the kl-divergence to build confidence bounds.
         For the moment, it can only be used with Bernoulli rewards.
@@ -149,7 +192,7 @@ class KL_UCB(IndexPolicy):
         #x0 = np.ones_like(means_inds)-1e-8
         if np.any(inds):
             for i in range(3): # achieves error 1e-6 while newton 1e-3 with same number of iterations
-                val, deriv, hess= KL_UCB.__rev_rel_entr(mu, means_inds)
+                val, deriv, hess= KLUCB.__rev_rel_entr(mu, means_inds)
                 mu -= 2*(val-rad_inds)*deriv/(2*deriv**2 - (val-rad_inds)*hess)
             # for i in range(3):
             #    val, deriv, _= __rev_rel_entr(mu, means_inds)
