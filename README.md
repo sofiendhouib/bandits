@@ -11,6 +11,8 @@ We implement the following algorithms depending on the bandit type
 * $\epsilon$-greedy
 * UCB
 * MOSS
+* Optimally Confident UCB
+* AdaUCB
 * Thompson sampling for Bernoulli rewards
 
 #### TODO:
