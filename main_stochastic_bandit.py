@@ -12,15 +12,20 @@ from experiment import StochasticBanditExperiment
 
 
 
-experiment = StochasticBanditExperiment(horizon= 100000, repetitions= 100)
+experiment = StochasticBanditExperiment(horizon= 10000, repetitions= 100)
 
 
-bandit_instance = bandit.StochasticBandit([0.5, 0.6], partial(random.binomial, 1))
-# agent = policy.UCB1(a= lambda x: 1+x*log(x)**2)
-agent = policy.AdaUCB(horizon= experiment.horizon)
-
-experiment.run_parallel(bandit_instance, agent, show_progress= True)
+bandit_instance = bandit.StochasticBandit([0.5, 0.6], partial(random.normal, scale= 1.0))
 
 plt.figure()
-plt.plot(np.arange(experiment.horizon)+1, experiment.compute_regret(bandit_instance))
+for ratio in np.linspace(0.5,1.5,11):
+    agent = policy.AdaUCB(horizon= experiment.horizon, sigma= ratio)
+    # agent = policy.UCB1(a= lambda x: 1+x*log(x)**2)
+
+
+    experiment.run_parallel(bandit_instance, agent, show_progress= True)
+
+    plt.plot(np.arange(experiment.horizon)+1, experiment.compute_regret(bandit_instance), label= str(ratio))
+    plt.legend()
 plt.show()
+# %%
