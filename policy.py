@@ -7,7 +7,8 @@ random =default_rng()
 from sklearn.linear_model import Lasso as LassoSklearn
 from abc import ABC, abstractmethod
 
-class StochasticBanditPolicy(ABC):
+# class StochasticBanditPolicy(ABC):
+class StochasticBanditPolicy:
 
     @abstractmethod
     def play_arm(self, cumul_rewards, n_pulls, t):
@@ -120,6 +121,7 @@ class OptimallyConfidentUCB(SubGaussianBanditUCB):
         return 2*(1+self.eps)*np.log(self.horizon/t)
 
 class AdaUCB(SubGaussianBanditUCB):
+
     def __init__(self, horizon= 1000, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.horizon = horizon
@@ -130,7 +132,6 @@ class AdaUCB(SubGaussianBanditUCB):
     
     def confidence_radius_numerator(self, n_pulls, t):
         denom = np.sqrt(np.minimum(n_pulls[None,:], n_pulls[:, None])).sum(axis=0)
-        denom *= np.sqrt(n_pulls)
         return 2*np.log(self.horizon/(denom*np.sqrt(n_pulls)))
 
 class ThompsonBernoulli(IndexPolicy):
@@ -293,7 +294,7 @@ class LALasso(ContextualBanditPolicy):
     def update(self, x, y, t):
         self.V += np.einsum("ik,jk->ijk", x, x)
         self.b += y * x
-        self.lr = t/np.linalg.norm(self.V, axis= (0,1), ord= 2)
+        # self.lr = t/np.linalg.norm(self.V, axis= (0,1), ord= 2)
         l_t = self.l_reg*sqrt((4*log(t) + 2*log(self.dim))/t)
         # self.theta_estim = solve_lasso(V= self.V, b= self.b, l= l_t, 
         #                                theta= self.theta_estim, lr= self.lr, t= t)
@@ -405,6 +406,21 @@ def value_lasso(V, b, theta, l, t):
     return 0.5/t*(theta @ V - b) @ theta + l*np.linalg.norm(theta, ord= 1)
 
 def rank1_update(invA, u):
+    """Implements the Sherman-Morrison formula update to be substracted from the inverse of a matrix.
+    
+
+    Parameters
+    ----------
+    invA : numpy array or matrix
+        inverse of the matrix to be updated
+    u : numpy array
+        vector defining the rank 1 matrix update
+
+    Returns
+    -------
+    numpy array or matrix
+        matrix to  be subtracted from the inverse in the Sherman-Morrison formula
+    """
     invA_u = invA @ u
     return np.outer(invA_u, invA_u)/(1 + u @ invA_u)
 
