@@ -219,7 +219,7 @@ class GraphLinUCB():
         #radius = self.beta[u] * np.sqrt(np.einsum("ki, ij, kj -> k", cxt_mat, self.invA[u], cxt_mat))
         # theta_estim_vec, _, rank, _ = np.linalg.lstsq(self.A_aug, self.b_aug, rcond= None)
         theta_estim_u = self.theta_estim_vec[u*self.dim:(u+1)*self.dim]
-        return np.argmax(cxt_mat @ theta_estim_u)# + radius)
+        return np.argmax(cxt_mat @ theta_estim_u + radius)
     
     def get_theta(self):
         return self.theta_estim_vec.reshape((self.n_users, self.dim))
